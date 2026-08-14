@@ -1,0 +1,30 @@
+# Dependencies
+node_modules/
+
+# Build output
+dist/
+build/
+
+# Environment variables
+.env
+.env.local
+
+# Editor directories
+.vscode/
+.idea/
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Notes (learning files, not for repo)
+notes/
+
+# Logs
+*.log
+npm-debug.log*
+
+# Runtime data
+pids/
+*.pid
+*.seed
