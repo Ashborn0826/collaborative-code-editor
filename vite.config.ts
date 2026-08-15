@@ -4,6 +4,12 @@ import monacoEditorPlugin from 'vite-plugin-monaco-editor'
 import path from 'path'
 
 export default defineConfig({
+  server: {
+    proxy: {
+      // Forward auth API calls to the auth server during development
+      '/auth': 'http://localhost:3001',
+    },
+  },
   plugins: [
     react(),
     (monacoEditorPlugin as any).default({

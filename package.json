@@ -7,11 +7,14 @@
     "dev": "vite",
     "build": "tsc && vite build",
     "preview": "vite preview",
-    "server": "node server/index.js"
+    "server": "node server/index.js",
+    "auth-server": "node server/auth-server.js"
   },
   "dependencies": {
     "@monaco-editor/react": "^4.6.0",
+    "bcryptjs": "^3.0.3",
     "express": "^4.19.2",
+    "jsonwebtoken": "^9.0.3",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
     "ws": "^8.18.0",
@@ -20,6 +23,8 @@
     "yjs": "^13.6.18"
   },
   "devDependencies": {
+    "@types/bcryptjs": "^2.4.6",
+    "@types/jsonwebtoken": "^9.0.10",
     "@types/react": "^18.3.3",
     "@types/react-dom": "^18.3.0",
     "@types/ws": "^8.5.12",
