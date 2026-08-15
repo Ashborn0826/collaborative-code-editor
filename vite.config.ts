@@ -8,6 +8,7 @@ export default defineConfig({
     proxy: {
       // Forward auth API calls to the auth server during development
       '/auth': 'http://localhost:3001',
+      '/rooms': 'http://localhost:3001',
     },
   },
   plugins: [
