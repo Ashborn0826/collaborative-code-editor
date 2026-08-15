@@ -94,6 +94,12 @@ const inputStyle: React.CSSProperties = {
   background: '#1e1e1e', color: '#e0e0e0', fontSize: '14px', outline: 'none', width: '100%',
 }
 
+const roleBadgeBg = (role: string) => {
+  if (role === 'owner') return '#f0883e'
+  if (role === 'editor') return '#2ea043'
+  return '#6e7681'
+}
+
 const btnStyle: React.CSSProperties = {
   padding: '10px', borderRadius: '6px', border: 'none',
   background: '#2ea043', color: '#fff', fontSize: '14px', fontWeight: 600, cursor: 'pointer',
@@ -163,12 +169,12 @@ function HomeScreen({ token }: { token: string }) {
   )
 }
 
-// ─── Identity helper (per-session random, not stored — rooms replace session identity) ──
+// ─── Identity: color is random per-session, name is the auth username ──
+// Now that auth exists, the auth username IS the user's identity.
+// We only generate a random color (for cursor labels) — the name comes from auth.
 function newIdentity() {
-  const names = ['Nebula', 'Orbit', 'Pulsar', 'Quasar', 'Vega', 'Atlas', 'Orion', 'Lyra', 'Draco', 'Phoenix']
-  const name = names[Math.floor(Math.random() * names.length)] + '-' + Math.floor(Math.random() * 1000)
   const color = '#' + Math.floor(Math.random() * 0xffffff).toString(16).padStart(6, '0')
-  return { name, color }
+  return { color }
 }
 
 // ─── Editor View ──────────────────────────────────────────────────────────────
@@ -190,21 +196,18 @@ function EditorView({ token }: { token: string }) {
       { params: { token } }
     )
 
-    let identity = newIdentity()
-    const stored = sessionStorage.getItem('collab-user')
-    if (stored) {
-      try { identity = JSON.parse(stored) } catch { /* use new */ }
-    } else {
-      sessionStorage.setItem('collab-user', JSON.stringify(identity))
-    }
     const username = sessionStorage.getItem('auth-username') || 'unknown'
-    wsProvider.awareness.setLocalStateField('user', { ...identity, username })
+    const { color } = newIdentity()
+    // Awareness state: name = auth username (for cursor labels + Room Access), color = random per tab
+    wsProvider.awareness.setLocalStateField('user', { name: username, color })
 
     return wsProvider
   })
 
   const [connected, setConnected] = useState(false)
-  const [onlineUsers, setOnlineUsers] = useState<{ name: string; color: string }[]>([])
+  const [onlineUsers, setOnlineUsers] = useState<{ name: string; color: string; username: string }[]>([])
+  const [myRole, setMyRole] = useState<string>('viewer')
+  const [permissions, setPermissions] = useState<Record<string, string>>({})
   const localClientIDRef = useRef<number>(-1)
 
   useEffect(() => {
@@ -231,6 +234,22 @@ function EditorView({ token }: { token: string }) {
   useEffect(() => {
     return () => { provider.destroy() }
   }, [provider])
+
+  // Fetch permissions on mount to determine our role
+  useEffect(() => {
+    if (!roomId) return
+    fetch(`${ROOMS_API}/${roomId}/permissions`, {
+      headers: { Authorization: `Bearer ${token}` }
+    })
+      .then(res => res.ok ? res.json() : null)
+      .then(data => {
+        if (data) {
+          setMyRole(data.myRole)
+          setPermissions(data.permissions)
+        }
+      })
+      .catch(() => {})
+  }, [roomId, token])
 
   useEffect(() => {
     const handleBeforeUnload = () => { provider.awareness.setLocalState(null) }
@@ -387,6 +406,10 @@ function EditorView({ token }: { token: string }) {
           </span>
         )}
 
+        <span style={{ fontSize: '11px', padding: '1px 6px', borderRadius: '4px', background: roleBadgeBg(myRole), color: '#fff' }}>
+          {myRole}
+        </span>
+
         {onlineUsers.length > 0 && (
           <span style={{ fontSize: '12px', color: '#6e7681' }}>
             {onlineUsers.length} other{onlineUsers.length > 1 ? 's' : ''} online:{' '}
@@ -396,6 +419,16 @@ function EditorView({ token }: { token: string }) {
               </span>
             ))}
           </span>
+        )}
+
+        {myRole === 'owner' && (
+          <RoleManager
+            roomId={roomId!}
+            token={token}
+            permissions={permissions}
+            onlineUsers={onlineUsers}
+            onUpdate={(updated) => setPermissions(updated)}
+          />
         )}
 
         <button
@@ -423,9 +456,91 @@ function EditorView({ token }: { token: string }) {
           options={{
             fontSize: 14, minimap: { enabled: true },
             scrollBeyondLastLine: false, wordWrap: 'on',
+            readOnly: myRole === 'viewer',
           }}
         />
       </div>
+    </div>
+  )
+}
+
+// ─── Role Manager (owner only) ─────────────────────────────────────────────────
+function RoleManager({ roomId, token, permissions, onlineUsers, onUpdate }: {
+  roomId: string
+  token: string
+  permissions: Record<string, string>
+  onlineUsers: { name: string; color: string; username: string }[]
+  onUpdate: (updated: Record<string, string>) => void
+}) {
+  const [open, setOpen] = useState(false)
+  const [error, setError] = useState('')
+
+  // permissions is the single authoritative source of who belongs to this room.
+  // onlineUsers is used only to determine who is currently connected.
+  // Each row = one permission entry, keyed by auth username.
+  const changeRole = async (user: string, newRole: string) => {
+    setError('')
+    const res = await fetch(`${ROOMS_API}/${roomId}/role`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+      body: JSON.stringify({ user, role: newRole }),
+    })
+    const data = await res.json()
+    if (!res.ok) { setError(data.error || 'failed'); return }
+    const updated = { ...permissions, [user]: newRole }
+    onUpdate(updated)
+  }
+
+  return (
+    <div style={{ position: 'relative' }}>
+      <button
+        onClick={() => setOpen(o => !o)}
+        style={{
+          background: 'transparent', border: '1px solid #3c3c3c', borderRadius: '4px',
+          color: '#6e7681', fontSize: '12px', padding: '4px 10px', cursor: 'pointer',
+        }}
+      >
+        Manage access
+      </button>
+
+      {open && (
+        <div style={{
+          position: 'absolute', top: '100%', right: 0, marginTop: '4px',
+          background: '#252526', border: '1px solid #3c3c3c', borderRadius: '8px',
+          padding: '16px', width: '280px', zIndex: 200,
+          display: 'flex', flexDirection: 'column', gap: '12px',
+          boxShadow: '0 8px 24px rgba(0,0,0,0.4)',
+        }}>
+          <p style={{ color: '#e0e0e0', fontSize: '13px', margin: 0, fontWeight: 600 }}>
+            Room Access
+          </p>
+
+          {Object.entries(permissions).map(([user, role]) => (
+            <div key={user} style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <span style={{ color: '#ccc', fontSize: '12px', flex: 1, overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                {user}{' '}
+                <span style={{ color: '#6e7681' }}>
+                  ({onlineUsers.find(u => u.username === user)?.name ?? 'offline'})
+                </span>
+              </span>
+              <select
+                value={role}
+                onChange={e => changeRole(user, e.target.value)}
+                style={{
+                  background: '#1e1e1e', border: '1px solid #3c3c3c', borderRadius: '4px',
+                  color: '#e0e0e0', fontSize: '11px', padding: '3px 6px', cursor: 'pointer',
+                }}
+              >
+                <option value="owner">owner</option>
+                <option value="editor">editor</option>
+                <option value="viewer">viewer</option>
+              </select>
+            </div>
+          ))}
+
+          {error && <p style={{ color: '#f85149', fontSize: '12px', margin: 0 }}>{error}</p>}
+        </div>
+      )}
     </div>
   )
 }

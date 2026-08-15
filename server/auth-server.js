@@ -138,7 +138,12 @@ app.get('/auth/verify', (req, res) => {
 app.post('/rooms', requireAuth, (req, res) => {
   const roomId = crypto.randomUUID()        // 122 bits of randomness — no collision risk
   const rooms = loadRooms()
-  rooms[roomId] = { owner: req.username, createdAt: new Date().toISOString() }
+  // Permissions: owner starts as 'owner', everyone else has no entry (implicitly no access until granted)
+  rooms[roomId] = {
+    owner: req.username,
+    createdAt: new Date().toISOString(),
+    permissions: { [req.username]: 'owner' },  // only creator can edit by default
+  }
   saveRooms(rooms)
   res.json({ roomId })
 })
@@ -149,6 +154,39 @@ app.get('/rooms/:roomId', (req, res) => {
   const room = rooms[req.params.roomId]
   if (!room) return res.status(404).json({ error: 'room not found' })
   res.json({ roomId: req.params.roomId, ...room })
+})
+
+// ─── PUT /rooms/:roomId/role — update a user's role (owner only) ────────────
+app.put('/rooms/:roomId/role', requireAuth, (req, res) => {
+  const { user, role } = req.body
+  if (!user || !role) return res.status(400).json({ error: 'user and role required' })
+  if (!['owner', 'editor', 'viewer'].includes(role)) {
+    return res.status(400).json({ error: 'role must be owner, editor, or viewer' })
+  }
+
+  const rooms = loadRooms()
+  const room = rooms[req.params.roomId]
+  if (!room) return res.status(404).json({ error: 'room not found' })
+  if (room.owner !== req.username) return res.status(403).json({ error: 'only the owner can change roles' })
+  // Can't demote the last owner (room must always have at least one owner)
+  if (role !== 'owner' && user === room.owner && Object.values(room.permissions).filter(r => r === 'owner').length <= 1) {
+    return res.status(400).json({ error: 'cannot demote the last owner' })
+  }
+
+  room.permissions = room.permissions || {}
+  room.permissions[user] = role
+  saveRooms(rooms)
+  res.json({ ok: true })
+})
+
+// ─── GET /rooms/:roomId/permissions — get permissions map (auth required) ─────
+app.get('/rooms/:roomId/permissions', requireAuth, (req, res) => {
+  const rooms = loadRooms()
+  const room = rooms[req.params.roomId]
+  if (!room) return res.status(404).json({ error: 'room not found' })
+  const myRole = room.permissions?.[req.username]
+  if (!myRole) return res.status(403).json({ error: 'you are not a member of this room' })
+  res.json({ permissions: room.permissions || {}, myRole })
 })
 
 app.listen(PORT, () => {

@@ -6,5 +6,13 @@
   "Ash1": {
     "passwordHash": "$2b$10$VVKJWZW9UOgDGYzsucjYF.DchHpfruw92ShGtDGvaWDkNyZskVoDu",
     "createdAt": "2026-08-15T06:28:58.752Z"
+  },
+  "Alice": {
+    "passwordHash": "$2b$10$JDPQGWs9nuVQIDh3smfZsuN.8DxF8eJWGcWP2h2TZWdGVDcGjr39y",
+    "createdAt": "2026-08-15T07:11:25.613Z"
+  },
+  "Bob": {
+    "passwordHash": "$2b$10$WiOtT0X5xtopO1JarmRbOOpaQWYf1ZC6R3vQpdVy.aYhYaaXs73Im",
+    "createdAt": "2026-08-15T07:12:01.483Z"
   }
 }
