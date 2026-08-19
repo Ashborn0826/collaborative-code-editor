@@ -28,3 +28,6 @@ npm-debug.log*
 pids/
 *.pid
 *.seed
+
+# Document snapshots (binary Yjs state files)
+server/snapshots/

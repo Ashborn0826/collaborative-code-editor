@@ -7,7 +7,8 @@
       "Bash(node -e \"const y = require\\('y-websocket/bin/utils'\\); console.log\\(Object.keys\\(y\\)\\)\")",
       "Bash(node -e \"import\\('y-websocket/bin/utils'\\).then\\(m => console.log\\(Object.keys\\(m\\)\\)\\)\")",
       "Bash(node *)",
-      "mcp__ide__getDiagnostics"
+      "mcp__ide__getDiagnostics",
+      "Bash(echo \"exit: $?\")"
     ]
   }
 }

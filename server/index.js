@@ -7,9 +7,10 @@ import { WebSocketServer } from 'ws'
 import { setupWSConnection } from 'y-websocket/bin/utils'
 import jwt from 'jsonwebtoken'
 import { parse, resolve } from 'url'
-import { readFileSync, existsSync } from 'fs'
+import { existsSync, readFileSync } from 'fs'
 import { fileURLToPath } from 'url'
-import { dirname, join } from 'path'
+import { dirname } from 'path'
+import { initPersistence } from './persistence.js'
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
 
@@ -119,6 +120,7 @@ server.on('upgrade', (request, socket, head) => {
 })
 
 server.listen(PORT, () => {
+  initPersistence()
   console.log(`y-websocket server running on ws://localhost:${PORT}`)
   console.log(`Clients must connect with ?token=<jwt>`)
 })
