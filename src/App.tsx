@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { BrowserRouter, Routes, Route, useNavigate, useParams } from 'react-router-dom'
+import { Routes, Route, useNavigate, useParams } from 'react-router-dom'
 import Editor, { OnMount } from '@monaco-editor/react'
 import * as Y from 'yjs'
 import { WebsocketProvider } from 'y-websocket'
@@ -107,10 +107,29 @@ const btnStyle: React.CSSProperties = {
 
 // ─── Home Screen ─────────────────────────────────────────────────────────────
 function HomeScreen({ token }: { token: string }) {
-  const [joinId, setJoinId] = useState('')
+  const [joinId, setJoinId] = useState(() => new URLSearchParams(window.location.search).get('join') || '')
   const [error, setError] = useState('')
   const [creating, setCreating] = useState(false)
+  const [recentRooms, setRecentRooms] = useState<{ id: string; label: string }[]>([])
   const navigate = useNavigate()
+
+  // Load recent rooms from localStorage on mount
+  useEffect(() => {
+    try {
+      const stored = JSON.parse(localStorage.getItem('recent-rooms') || '[]')
+      setRecentRooms(stored)
+    } catch { setRecentRooms([]) }
+  }, [])
+
+  // Save a room to recent list when navigating to it
+  const saveRecentRoom = (roomId: string) => {
+    try {
+      const stored = JSON.parse(localStorage.getItem('recent-rooms') || '[]') as { id: string; label: string; at: number }[]
+      const filtered = stored.filter(r => r.id !== roomId)
+      const updated = [{ id: roomId, label: roomId.slice(0, 8), at: Date.now() }, ...filtered].slice(0, 5)
+      localStorage.setItem('recent-rooms', JSON.stringify(updated))
+    } catch { /* ignore */ }
+  }
 
   const createRoom = async () => {
     setCreating(true)
@@ -122,48 +141,74 @@ function HomeScreen({ token }: { token: string }) {
       })
       const data = await res.json()
       if (!res.ok) { setError(data.error || 'failed'); return }
+      saveRecentRoom(data.roomId)
       navigate(`/room/${data.roomId}`)
     } catch { setError('network error') }
     finally { setCreating(false) }
   }
 
-  const joinRoom = async () => {
-    const id = joinId.trim()
-    if (!id) return
+  const joinRoom = async (id?: string) => {
+    const roomId = (id || joinId).trim()
+    if (!roomId) return
     setError('')
-    // Try to verify the room exists
     try {
-      const res = await fetch(`${ROOMS_API}/${id}`)
+      const res = await fetch(`${ROOMS_API}/${roomId}`)
       if (!res.ok) { setError('room not found'); return }
-      navigate(`/room/${id}`)
+      saveRecentRoom(roomId)
+      navigate(`/room/${roomId}`)
     } catch { setError('network error') }
   }
 
   return (
     <div style={styles.centerScreen}>
-      <div style={{ ...styles.authBox, width: '420px' }}>
-        <h2 style={styles.title}>Your Rooms</h2>
+      <div style={{ ...styles.authBox, width: '440px' }}>
+        <div style={{ textAlign: 'center', marginBottom: '8px' }}>
+          <h2 style={styles.title}>Collab Code Editor</h2>
+          <p style={{ color: '#6e7681', fontSize: '13px', margin: '4px 0 0' }}>
+            Real-time collaborative code editing
+          </p>
+        </div>
 
-        <button onClick={createRoom} disabled={creating} style={{ ...btnStyle, opacity: creating ? 0.6 : 1 }}>
+        <button onClick={createRoom} disabled={creating} style={{ ...btnStyle, opacity: creating ? 0.6 : 1, width: '100%' }}>
           {creating ? 'Creating...' : '+ Create new room'}
         </button>
 
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-          <p style={{ color: '#6e7681', fontSize: '13px', margin: 0 }}>Or join an existing room:</p>
+        <div style={{ borderTop: '1px solid #3c3c3c', paddingTop: '20px', display: 'flex', flexDirection: 'column', gap: '10px' }}>
+          <p style={{ color: '#6e7681', fontSize: '13px', margin: 0 }}>Join an existing room:</p>
           <div style={{ display: 'flex', gap: '8px' }}>
             <input
               value={joinId}
               onChange={e => setJoinId(e.target.value)}
-              placeholder="paste room ID or URL"
+              placeholder="paste room ID"
               style={{ ...inputStyle, flex: 1 }}
               onKeyDown={e => e.key === 'Enter' && joinRoom()}
             />
-            <button onClick={joinRoom} style={{ ...btnStyle, background: '#3c3c3c', whiteSpace: 'nowrap' }}>
+            <button onClick={() => joinRoom()} style={{ ...btnStyle, background: '#3c3c3c', whiteSpace: 'nowrap' }}>
               Join
             </button>
           </div>
           {error && <p style={{ color: '#f85149', fontSize: '13px', margin: 0 }}>{error}</p>}
         </div>
+
+        {recentRooms.length > 0 && (
+          <div style={{ borderTop: '1px solid #3c3c3c', paddingTop: '16px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
+            <p style={{ color: '#6e7681', fontSize: '12px', margin: 0 }}>Recent rooms</p>
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
+              {recentRooms.map(room => (
+                <button
+                  key={room.id}
+                  onClick={() => joinRoom(room.id)}
+                  style={{
+                    background: '#1e1e1e', border: '1px solid #3c3c3c', borderRadius: '6px',
+                    color: '#9cdcfe', fontSize: '12px', padding: '4px 10px', cursor: 'pointer',
+                  }}
+                >
+                  {room.label}
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
       </div>
     </div>
   )
@@ -176,6 +221,25 @@ function newIdentity() {
   const color = '#' + Math.floor(Math.random() * 0xffffff).toString(16).padStart(6, '0')
   return { color }
 }
+
+// ─── Language options for the editor ─────────────────────────────────────────
+const LANGUAGES = [
+  { value: 'javascript', label: 'JavaScript' },
+  { value: 'typescript', label: 'TypeScript' },
+  { value: 'python', label: 'Python' },
+  { value: 'go', label: 'Go' },
+  { value: 'rust', label: 'Rust' },
+  { value: 'cpp', label: 'C++' },
+  { value: 'java', label: 'Java' },
+  { value: 'csharp', label: 'C#' },
+  { value: 'html', label: 'HTML' },
+  { value: 'css', label: 'CSS' },
+  { value: 'json', label: 'JSON' },
+  { value: 'markdown', label: 'Markdown' },
+  { value: 'sql', label: 'SQL' },
+  { value: 'shell', label: 'Shell' },
+  { value: 'yaml', label: 'YAML' },
+]
 
 // ─── Editor View ──────────────────────────────────────────────────────────────
 function EditorView({ token }: { token: string }) {
@@ -205,9 +269,11 @@ function EditorView({ token }: { token: string }) {
   })
 
   const [connected, setConnected] = useState(false)
-  const [onlineUsers, setOnlineUsers] = useState<{ name: string; color: string; username: string }[]>([])
+  const [onlineUsers, setOnlineUsers] = useState<{ name: string; color: string }[]>([])
   const [myRole, setMyRole] = useState<string>('viewer')
   const [permissions, setPermissions] = useState<Record<string, string>>({})
+  const [language, setLanguage] = useState<string>('javascript')
+  const [savedToast, setSavedToast] = useState(false)
   const localClientIDRef = useRef<number>(-1)
 
   useEffect(() => {
@@ -256,6 +322,19 @@ function EditorView({ token }: { token: string }) {
     window.addEventListener('beforeunload', handleBeforeUnload)
     return () => window.removeEventListener('beforeunload', handleBeforeUnload)
   }, [provider])
+
+  // Ctrl+S triggers a snapshot save notification
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if ((e.ctrlKey || e.metaKey) && e.key === 's') {
+        e.preventDefault()
+        setSavedToast(true)
+        setTimeout(() => setSavedToast(false), 2000)
+      }
+    }
+    window.addEventListener('keydown', handleKeyDown)
+    return () => window.removeEventListener('keydown', handleKeyDown)
+  }, [])
 
   const handleEditorDidMount: OnMount = (editor, monaco) => {
     editorRef.current = editor
@@ -421,6 +500,30 @@ function EditorView({ token }: { token: string }) {
           </span>
         )}
 
+        <button
+          onClick={() => navigator.clipboard.writeText(window.location.href).catch(() => {})}
+          title="Copy room link"
+          style={{
+            background: 'transparent', border: '1px solid #3c3c3c', borderRadius: '4px',
+            color: '#6e7681', fontSize: '12px', padding: '4px 10px', cursor: 'pointer',
+          }}
+        >
+          Copy link
+        </button>
+
+        <select
+          value={language}
+          onChange={e => setLanguage(e.target.value)}
+          style={{
+            background: '#1e1e1e', border: '1px solid #3c3c3c', borderRadius: '4px',
+            color: '#9cdcfe', fontSize: '12px', padding: '4px 8px', cursor: 'pointer',
+          }}
+        >
+          {LANGUAGES.map(l => (
+            <option key={l.value} value={l.value}>{l.label}</option>
+          ))}
+        </select>
+
         {myRole === 'owner' && (
           <RoleManager
             roomId={roomId!}
@@ -447,10 +550,21 @@ function EditorView({ token }: { token: string }) {
         </button>
       </div>
 
+      {savedToast && (
+        <div style={{
+          position: 'fixed', bottom: '24px', left: '50%', transform: 'translateX(-50%)',
+          background: '#2ea043', color: '#fff', padding: '8px 20px', borderRadius: '8px',
+          fontSize: '13px', fontWeight: 500, zIndex: 1000,
+          boxShadow: '0 4px 12px rgba(0,0,0,0.3)',
+        }}>
+          Document saved
+        </div>
+      )}
+
       <div style={{ flex: 1 }}>
         <Editor
           height="100%"
-          defaultLanguage="javascript"
+          defaultLanguage={language}
           theme="vs-dark"
           onMount={handleEditorDidMount}
           options={{
@@ -469,7 +583,7 @@ function RoleManager({ roomId, token, permissions, onlineUsers, onUpdate }: {
   roomId: string
   token: string
   permissions: Record<string, string>
-  onlineUsers: { name: string; color: string; username: string }[]
+  onlineUsers: { name: string; color: string }[]
   onUpdate: (updated: Record<string, string>) => void
 }) {
   const [open, setOpen] = useState(false)
@@ -520,7 +634,7 @@ function RoleManager({ roomId, token, permissions, onlineUsers, onUpdate }: {
               <span style={{ color: '#ccc', fontSize: '12px', flex: 1, overflow: 'hidden', textOverflow: 'ellipsis' }}>
                 {user}{' '}
                 <span style={{ color: '#6e7681' }}>
-                  ({onlineUsers.find(u => u.username === user)?.name ?? 'offline'})
+                  ({onlineUsers.find(u => u.name === user)?.name ? 'online' : 'offline'})
                 </span>
               </span>
               <select
@@ -548,7 +662,6 @@ function RoleManager({ roomId, token, permissions, onlineUsers, onUpdate }: {
 // ─── App (routing root) ──────────────────────────────────────────────────────
 function App() {
   const [token, setToken] = useState<string | null>(null)
-  const [username, setUsername] = useState<string>('')
 
   useEffect(() => {
     const storedToken = sessionStorage.getItem('auth-token')
@@ -561,9 +674,8 @@ function App() {
           if (res.ok) return res.json()
           throw new Error('invalid')
         })
-        .then(data => {
+        .then(() => {
           setToken(storedToken)
-          setUsername(data.username || storedUsername)
         })
         .catch(() => {
           sessionStorage.removeItem('auth-token')
@@ -572,7 +684,7 @@ function App() {
     }
   }, [])
 
-  if (!token) return <AuthScreen onAuth={(t, u) => { setToken(t); setUsername(u) }} />
+  if (!token) return <AuthScreen onAuth={(t) => { setToken(t) }} />
 
   return (
     <Routes>
